@@ -1,0 +1,55 @@
+{
+      "name": "servicapp",
+      "version": "1.0.0",
+      "private": true,
+      "scripts": {
+            "start": "concurrently \"npm run mysql-api\" \"npm run socket-server\" \"node start-clean-minimal.js\"",
+            "start-clean": "node start-clean-minimal.js",
+            "start-original": "react-scripts start",
+            "start-public": "set HOST=10.51.12.87&& set PORT=3000&& react-scripts start",
+            "socket-server": "node server/socketServer.js",
+            "mysql-api": "node server/mysqlAPI.js",
+            "dev": "concurrently \"npm run socket-server\" \"npm run start\"",
+            "dev-mysql": "concurrently \"npm run mysql-api\" \"npm run start-original\"",
+            "dev-public": "concurrently \"npm run socket-server\" \"npm run start-public\"",
+            "build": "react-scripts build",
+            "test": "react-scripts test",
+            "eject": "react-scripts eject"
+      },
+      "dependencies": {
+            "autoprefixer": "^10.0.0",
+            "bcrypt": "^6.0.0",
+            "cors": "^2.8.5",
+            "framer-motion": "^10.0.0",
+            "jsonwebtoken": "^9.0.2",
+            "lucide-react": "^0.263.0",
+            "mysql2": "^3.14.5",
+            "postcss": "^8",
+            "react": "^18.0.0",
+            "react-dom": "^18.0.0",
+            "react-router-dom": "^6.0.0",
+            "react-scripts": "^5.0.1",
+            "socket.io": "^4.8.1",
+            "socket.io-client": "^4.8.1",
+            "tailwind-merge": "^2.4.0",
+            "tailwindcss": "^3.4.1",
+            "tailwindcss-animate": "^1.0.7"
+      },
+      "main": "/index.js",
+      "devDependencies": {
+            "@craco/craco": "^7.1.0",
+            "concurrently": "^8.2.2"
+      },
+      "browserslist": {
+            "production": [
+                  ">0.2%",
+                  "not dead",
+                  "not op_mini all"
+            ],
+            "development": [
+                  "last 1 chrome version",
+                  "last 1 firefox version",
+                  "last 1 safari version"
+            ]
+      }
+}
