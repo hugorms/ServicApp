@@ -13,7 +13,8 @@ app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:3500', 'http://localhost:4000'],
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Configuración MySQL
 const dbConfig = {
@@ -420,6 +421,65 @@ app.post('/api/query/insert', verifyToken, async (req, res) => {
   }
 });
 
+
+// UPDATE - Actualizar registros
+app.put('/api/query/update', verifyToken, async (req, res) => {
+  const { table, data, conditions } = req.body;
+
+  try {
+    // Construir SET clause
+    const setFields = Object.keys(data).map(key => `${key} = ?`).join(', ');
+    const setValues = Object.values(data);
+
+    // Construir WHERE clause desde conditions string
+    // Ejemplo: "id = 5" o "user_id = 10 AND status = 'active'"
+    let whereSql = conditions || '1=1';
+
+    const sql = `UPDATE ${table} SET ${setFields} WHERE ${whereSql}`;
+
+    const [result] = await pool.execute(sql, setValues);
+
+    res.json({
+      success: true,
+      data: {
+        affectedRows: result.affectedRows,
+        changedRows: result.changedRows
+      },
+      error: null
+    });
+
+  } catch (error) {
+    console.error('Error en UPDATE:', error);
+    res.status(500).json({ success: false, data: null, error: error.message });
+  }
+});
+
+// DELETE - Eliminar registros
+app.delete('/api/query/delete', verifyToken, async (req, res) => {
+  const { table, conditions } = req.body;
+
+  try {
+    // Construir WHERE clause desde conditions string
+    // Ejemplo: "id = 5" o "user_id = 10 AND status = 'active'"
+    let whereSql = conditions || '1=1';
+
+    const sql = `DELETE FROM ${table} WHERE ${whereSql}`;
+
+    const [result] = await pool.execute(sql);
+
+    res.json({
+      success: true,
+      data: {
+        affectedRows: result.affectedRows
+      },
+      error: null
+    });
+
+  } catch (error) {
+    console.error('Error en DELETE:', error);
+    res.status(500).json({ success: false, data: null, error: error.message });
+  }
+});
 // POST APPLICATIONS ENDPOINTS
 app.get('/api/post_applications', verifyToken, async (req, res) => {
   const { worker_id, status, contractor_id } = req.query;
@@ -530,3 +590,58 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+// ============================================================================
+// GEOCODING PROXY (para evitar CORS y User-Agent issues)
+// ============================================================================
+
+// Geocoding search (dirección → coordenadas)
+app.get('/api/geocode/search', async (req, res) => {
+  const { query } = req.query;
+  
+  if (!query) {
+    return res.status(400).json({ success: false, error: 'Query is required' });
+  }
+
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&countrycodes=ve`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'ServicApp/1.0 (Contact: support@servicapp.com)'
+      }
+    });
+
+    const data = await response.json();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error en geocoding search:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Reverse geocoding (coordenadas → dirección)
+app.get('/api/geocode/reverse', async (req, res) => {
+  const { lat, lon } = req.query;
+  
+  if (!lat || !lon) {
+    return res.status(400).json({ success: false, error: 'Latitude and longitude are required' });
+  }
+
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'ServicApp/1.0 (Contact: support@servicapp.com)'
+      }
+    });
+
+    const data = await response.json();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error en reverse geocoding:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+console.log('✅ Geocoding proxy endpoints agregados');

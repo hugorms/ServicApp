@@ -1,4 +1,4 @@
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3009/api';
 
 // Cliente API con fetch nativo
 const apiClient = {
@@ -28,7 +28,7 @@ const apiClient = {
 
   async request(endpoint, options = {}) {
     const url = `${API_URL}${endpoint}`;
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
 
     const config = {
       headers: {
@@ -44,8 +44,8 @@ const apiClient = {
 
       // Manejar logout automático en 401
       if (response.status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('userId');
         window.location.href = '/login';
         throw new Error('Session expired');
       }
@@ -85,26 +85,15 @@ export const handleApiError = (error) => {
   return 'Ha ocurrido un error inesperado. Por favor intenta de nuevo.';
 };
 
-// Helper function para obtener el usuario actual
-export const getCurrentUser = () => {
-  try {
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
-  } catch (error) {
-    console.error('Error getting current user:', error);
-    return null;
-  }
-};
-
 // Helper function para obtener el token actual
 export const getCurrentToken = () => {
-  return localStorage.getItem('token');
+  return sessionStorage.getItem('token');
 };
 
 // Helper function para logout
 export const signOut = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+  sessionStorage.removeItem('token');
+  sessionStorage.removeItem('userId');
   return { error: null };
 };
 

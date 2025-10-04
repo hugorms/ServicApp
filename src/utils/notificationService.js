@@ -39,7 +39,7 @@ class NotificationService {
 
       const allWorkers = await mysqlClient.select(
         'users',
-        `user_type = 'worker' AND profile_completed = 1`
+        `user_type = 'worker'`
       );
 
       if (allWorkers && allWorkers.length > 0) {

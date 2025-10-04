@@ -107,8 +107,9 @@ function AppContent() {
           <Route path="/update-password" element={<UpdatePasswordScreen />} />
           <Route path="*" element={<Navigate to="/worker-registration" replace />} />
         </>
-      ) : userProfile && userProfile.user_type === 'contractor' && (!userProfile.company_name || !userProfile.profession) ? (
+      ) : userProfile && userProfile.user_type === 'contractor' && (!userProfile.phone || !userProfile.profession) ? (
         // CONTRATISTA INCOMPLETO - SIN MobileAppLayout (directo en PhoneFrame)
+        // Nota: Ya no verificamos company_name porque puede ser null en registro personal
         <>
           <Route path="/" element={<RegistroContratista />} />
           <Route path="/contractor-registration" element={<RegistroContratista />} />
@@ -131,13 +132,15 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
+    
+      <AuthProvider>
       <Router>
         <PhoneFrame>
           <AppContent />
         </PhoneFrame>
       </Router>
     </AuthProvider>
+    
   );
 }
 

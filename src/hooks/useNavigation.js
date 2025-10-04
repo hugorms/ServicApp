@@ -33,3 +33,4 @@ export const useNavigation = () => {
     getTabConfig
   };
 };
+export default useNavigation;

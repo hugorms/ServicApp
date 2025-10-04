@@ -4,6 +4,7 @@ import {
   Briefcase, Award, Clock, LogOut, Home, Building, Image, Shield
 } from 'lucide-react';
 import { apiClient, handleApiError } from '../utils/apiClient';
+import { mysqlClient } from '../utils/mysqlClient';
 import { useAuth } from '../hooks/useAuth';
 import ProfessionSelector from '../components/ProfessionSelector';
 import { getProfessionIcon } from '../config/professionsData';
@@ -102,11 +103,8 @@ const ProfileScreen = () => {
           earnings: (completedJobs?.length || 0) * 50000
         });
       } else if (userProfile.user_type === 'contractor') {
-        const postsResponse = await apiClient.get(`/posts?contractor_id=${userProfile.id}`);
-        const posts = postsResponse.data;
-
-        const completedPostsResponse = await apiClient.get(`/posts?contractor_id=${userProfile.id}&status=completed`);
-        const completedPosts = completedPostsResponse.data;
+        const posts = await mysqlClient.select('posts', `contractor_id = ${userProfile.id}`);
+        const completedPosts = await mysqlClient.select('posts', `contractor_id = ${userProfile.id} AND status = 'completed'`);
 
         setStats({
           totalJobs: posts?.length || 0,
@@ -146,7 +144,7 @@ const ProfileScreen = () => {
   const handleSaveProfile = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const dataToSend = { ...formData };
 
       // Convertir specialties a array si es string

@@ -4,6 +4,7 @@ import { mysqlClient } from '../utils/mysqlClient';
 import { PROFESSIONS_LIST, getProfessionIcon } from '../config/professionsData';
 import { MUNICIPALITIES, PARISHES, SECTORS, PROPERTY_TYPES } from '../config/locations';
 import NotificationService from '../utils/notificationService';
+import MapPicker from '../components/MapPicker';
 
 // Las notificaciones ahora se manejan con el servicio centralizado NotificationService
 

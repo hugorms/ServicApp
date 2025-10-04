@@ -198,7 +198,7 @@ const RegistroTrabajador = () => {
       // Intentar guardar en MySQL usando el endpoint correcto /api/users/:id
       try {
         const userId = userProfile?.id;
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
 
         console.log('🔍 Debug - userProfile:', userProfile);
         console.log('🔍 Debug - userId obtenido:', userId);

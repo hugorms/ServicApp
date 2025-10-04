@@ -23,6 +23,11 @@ CREATE TABLE IF NOT EXISTS posts (
   contact_phone VARCHAR(20),
   urgency ENUM('low', 'medium', 'high', 'urgent') NOT NULL,
 
+  -- Coordenadas GPS (Google Maps)
+  latitude DECIMAL(10,8) NULL COMMENT 'Latitud GPS',
+  longitude DECIMAL(11,8) NULL COMMENT 'Longitud GPS',
+  full_address TEXT NULL COMMENT 'Dirección completa detectada por Google Maps',
+
   -- Precios
   price VARCHAR(100),
   estimated_hours INT,
@@ -103,3 +108,9 @@ ALTER TABLE post_images MODIFY COLUMN image_url LONGTEXT NOT NULL;
 
 SELECT 'PARTE 2 COMPLETADA: Tablas posts, post_applications, post_images creadas' AS status;
 SELECT 'FIX APLICADO: Columna image_url modificada para soportar imágenes Base64 grandes' AS fix_status;
+-- Agregar columnas GPS si no existen (Google Maps integration)
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,8) NULL COMMENT 'Latitud GPS';
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS longitude DECIMAL(11,8) NULL COMMENT 'Longitud GPS';
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS full_address TEXT NULL COMMENT 'Dirección completa detectada por Google Maps';
+
+SELECT 'GPS AGREGADO: Columnas latitude, longitude, full_address agregadas a posts' AS gps_status;

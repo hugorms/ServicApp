@@ -1,0 +1,96 @@
+=== CAMBIOS PARA INTEGRAR MAPA EN NUEVOPOST.JS ===
+
+1. IMPORT (línea 7):
+import MapPicker from '../components/MapPicker';
+
+2. CAMPOS GPS EN FORMDATA (después de línea 55, antes del cierre de useState):
+    // Coordenadas GPS
+    latitude: editingPost?.latitude || null,
+    longitude: editingPost?.longitude || null,
+    full_address: editingPost?.full_address || ''
+
+3. FUNCIÓN handleLocationSelect (después de handleInputChange, línea 41):
+  // Handler para recibir datos del mapa
+  const handleLocationSelect = (locationData) => {
+    setFormData(prev => ({
+      ...prev,
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+      full_address: locationData.full_address,
+      municipality: locationData.municipality,
+      parish: locationData.parish,
+      sector: locationData.sector || prev.sector
+    }));
+  };
+
+4. VALIDATESTEP CASO 2 (cambiar línea 119):
+ANTES: return formData.municipality.trim() && formData.parish.trim() && formData.specific_address.trim();
+AHORA: return formData.latitude && formData.longitude;
+
+5. POSTDATA CAMPOS GPS (después de línea 173, antes del cierre de postData):
+        latitude: formData.latitude,
+        longitude: formData.longitude,
+        full_address: formData.full_address || null
+
+6. REEMPLAZAR TODO EL CASO 2 (líneas 324-400):
+      case 2:
+        return (
+          <div className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center">
+                <span className="text-xl">📍</span>
+              </div>
+              <h2 className="text-base font-bold text-slate-800">Ubicación</h2>
+              <p className="text-xs text-slate-600">¿Dónde se realizará el trabajo?</p>
+            </div>
+
+            <MapPicker
+              onLocationSelect={handleLocationSelect}
+              initialPosition={
+                formData.latitude && formData.longitude
+                  ? { lat: formData.latitude, lng: formData.longitude }
+                  : null
+              }
+            />
+
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Detalles adicionales (opcional)
+              </label>
+              <input
+                type="text"
+                value={formData.specific_address}
+                onChange={(e) => handleInputChange('specific_address', e.target.value)}
+                className="w-full bg-gray-100 focus:bg-white p-2 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+                placeholder="Ej: Torre 5, Piso 3, Apto 301"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Referencias adicionales
+              </label>
+              <textarea
+                value={formData.reference_info}
+                onChange={(e) => handleInputChange('reference_info', e.target.value)}
+                className="w-full bg-gray-100 focus:bg-white p-2 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-yellow-500 resize-none"
+                rows="2"
+                placeholder="Ej: Casa azul con portón blanco"
+              />
+            </div>
+          </div>
+        );
+
+7. FIX ID POST (línea 202):
+ANTES: id: result.data?.id || result.insertId,
+AHORA: id: result.data[0].id,
+
+8. FIX IMAGEDATA (líneas 212-218):
+ELIMINAR: description: null,
+ELIMINAR: created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+DEJAR SOLO:
+              const imageData = {
+                post_id: savedPost.id,
+                image_url: formData.images[i],
+                order_index: i + 1
+              };

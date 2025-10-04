@@ -5,7 +5,7 @@ class MySQLClient {
   // Insertar registro
   async insert(table, data) {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
 
       // Si no hay token, retornar error sin hacer petición
       if (!token) {
@@ -47,7 +47,7 @@ class MySQLClient {
   // Seleccionar registros
   async select(table, conditions = '', orderBy = '', limit = '') {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
 
       // ✅ PERMITIR SELECT sin token para tablas públicas (posts, etc.)
       // Solo advertir si no hay token, pero continuar con la petición
@@ -129,7 +129,7 @@ class MySQLClient {
   // Actualizar registro
   async update(table, data, conditions) {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
 
       // Si no hay token, retornar error sin hacer petición
       if (!token) {
@@ -172,7 +172,7 @@ class MySQLClient {
   // Eliminar registro
   async delete(table, conditions) {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/query/delete`, {
         method: 'DELETE',
         headers: {
@@ -204,7 +204,7 @@ class MySQLClient {
       const response = await fetch(`${API_BASE_URL}/test`);
       return response.ok;
     } catch (error) {
-      console.warn('⚠️ MySQL API no disponible, usando localStorage');
+      console.warn('⚠️ MySQL API no disponible');
       return false;
     }
   }

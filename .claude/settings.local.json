@@ -143,7 +143,17 @@
       "Bash(git init:*)",
       "Bash(git remote add:*)",
       "Bash(git add:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(git commit:*)",
+      "Bash(git config:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(for file in AuthScreen ForgotPasswordScreen UpdatePasswordScreen RegistroTrabajador RegistroContratista CompleteProfileScreen MobileAppLayout)",
+      "Bash(do echo \"=== $file.js ===\")",
+      "Bash(tail:*)",
+      "Bash(done)",
+      "Bash(powershell:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []
