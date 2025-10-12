@@ -468,7 +468,7 @@ const EncuentraServicios = () => {
               <div key={post.id} className="group">
                 {/* Card dividida en dos secciones - IGUAL QUE EN MIS PUBLICACIONES */}
                 <div
-                  className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 hover:scale-[1.02] border border-yellow-200/30 cursor-pointer"
+                  className="bg-white rounded-xl overflow-hidden shadow-sm border border-yellow-200/30 cursor-pointer"
                   onClick={() => openPostDetail(post)}
                 >
 
@@ -530,7 +530,7 @@ const EncuentraServicios = () => {
                             e.stopPropagation();
                             openApplicationModal(post);
                           }}
-                          className="p-2.5 bg-green-500 hover:bg-green-600 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 opacity-0 group-hover:opacity-100"
+                          className="p-2.5 bg-green-500 hover:bg-green-600 rounded-full shadow-lg opacity-0 group-hover:opacity-100"
                           title="Aplicar a este trabajo"
                         >
                           <ArrowRight className="w-4 h-4 text-white" />

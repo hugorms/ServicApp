@@ -199,6 +199,20 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateProfileLocally = (updatedData) => {
+    console.log('🔄 Actualizando perfil localmente:', updatedData);
+
+    const updatedProfile = {
+      ...userProfile,
+      ...updatedData
+    };
+
+    setUserProfile(updatedProfile);
+    setUser(updatedProfile);
+
+    console.log('✅ Perfil actualizado localmente');
+  };
+
   const value = {
     user,
     userProfile,
@@ -209,7 +223,8 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     updatePassword,
     fetchUserProfile,
-    updateProfile
+    updateProfile,
+    updateProfileLocally
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -36,13 +36,16 @@ const NuevoPost = ({ userProfile, onBack, editingPost }) => {
     specialty: editingPost?.specialty || '',
     description: editingPost?.description || '',
 
-    // Nueva estructura de ubicación
+    // Nueva estructura de ubicación con coordenadas
     municipality: editingPost?.municipality || '',
     parish: editingPost?.parish || '',
     sector: editingPost?.sector || '',
     property_type: editingPost?.property_type || '',
     specific_address: editingPost?.specific_address || '',
     reference_info: editingPost?.reference_info || '',
+    latitude: editingPost?.latitude || null,
+    longitude: editingPost?.longitude || null,
+    full_address: editingPost?.full_address || '',
 
     // Presupuesto
     budget_min: editingPost?.budget_min || '',
@@ -68,6 +71,21 @@ const NuevoPost = ({ userProfile, onBack, editingPost }) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
+    }));
+  };
+
+  // Función para manejar la selección de ubicación del mapa
+  const handleLocationSelect = (locationData) => {
+    console.log('📍 Ubicación seleccionada:', locationData);
+
+    setFormData(prev => ({
+      ...prev,
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+      full_address: locationData.full_address,
+      municipality: locationData.municipality || prev.municipality,
+      parish: locationData.parish || prev.parish,
+      sector: locationData.sector || prev.sector
     }));
   };
 
@@ -148,7 +166,8 @@ const NuevoPost = ({ userProfile, onBack, editingPost }) => {
       case 1:
         return formData.title.trim() && formData.specialty && formData.description.trim();
       case 2:
-        return formData.municipality.trim() && formData.parish.trim() && formData.specific_address.trim();
+        // Validar que se haya seleccionado una ubicación en el mapa
+        return formData.latitude && formData.longitude && formData.full_address;
       case 3:
         return formData.contact_phone.trim();
       default:
@@ -189,13 +208,16 @@ const NuevoPost = ({ userProfile, onBack, editingPost }) => {
         title: formData.title.trim(),
         description: formData.description.trim(),
         specialty: formData.specialty, // ✅ PROFESIÓN requerida
-        location: `${formData.municipality}, ${formData.parish}, ${formData.sector}`.trim(),
+        location: formData.full_address || `${formData.municipality}, ${formData.parish}, ${formData.sector}`.trim(),
         municipality: formData.municipality.trim(),
         parish: formData.parish.trim(),
         sector: formData.sector.trim(),
         property_type: formData.property_type,
         specific_address: formData.specific_address.trim(),
         reference_info: formData.reference_info.trim(),
+        latitude: formData.latitude,
+        longitude: formData.longitude,
+        full_address: formData.full_address,
         budget_min: parseFloat(formData.budget_min) || null,
         budget_max: parseFloat(formData.budget_max) || null,
         contact_phone: formData.contact_phone.trim(),
@@ -224,38 +246,60 @@ const NuevoPost = ({ userProfile, onBack, editingPost }) => {
 
         try {
           const result = await mysqlClient.insert('posts', postData);
+          console.log('🔍 Resultado completo del insert posts:', result);
 
           if (!result.success) {
             throw new Error('Error al crear post en MySQL');
           }
 
-          // Obtener el ID del post creado
+          // Obtener el ID del post creado - revisar estructura del resultado
+          const postId = result.data?.[0]?.id || result.data?.id || result.insertId;
+          console.log('🔍 Post ID extraído:', postId);
+
           savedPost = {
-            id: result.data?.id || result.insertId,
+            id: postId,
             ...postData
           };
           console.log('✅ Post creado en MySQL:', savedPost);
 
+          if (!savedPost.id) {
+            throw new Error('No se pudo obtener el ID del post creado');
+          }
+
           // Guardar imágenes en la tabla post_images
           if (formData.images && formData.images.length > 0) {
             console.log(`💾 Guardando ${formData.images.length} imágenes en post_images...`);
+            console.log(`📊 Post ID para imágenes: ${savedPost.id}`);
 
             for (let i = 0; i < formData.images.length; i++) {
               const imageData = {
                 post_id: savedPost.id,
                 image_url: formData.images[i],
                 description: null,
-                order_index: i + 1,
-                created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+                order_index: i + 1
               };
 
+              console.log(`🔄 Intentando guardar imagen ${i + 1}...`);
+              console.log(`📏 Tamaño imagen ${i + 1}: ${formData.images[i].length} caracteres`);
+
               try {
-                await mysqlClient.insert('post_images', imageData);
-                console.log(`✅ Imagen ${i + 1} guardada en post_images`);
+                const result = await mysqlClient.insert('post_images', imageData);
+                console.log(`✅ Imagen ${i + 1} guardada en post_images:`, result);
               } catch (imageError) {
-                console.error(`❌ Error guardando imagen ${i + 1}:`, imageError);
+                console.error(`❌ Error detallado guardando imagen ${i + 1}:`, imageError);
+                console.error(`❌ Datos de la imagen que falló:`, {
+                  post_id: imageData.post_id,
+                  order_index: imageData.order_index,
+                  image_size: imageData.image_url.length
+                });
+
+                // Continuar con las demás imágenes
+                continue;
               }
             }
+            console.log(`🎯 Proceso de guardado de imágenes completado`);
+          } else {
+            console.log(`ℹ️ No hay imágenes para guardar`);
           }
 
           // Enviar notificaciones a trabajadores
@@ -364,61 +408,34 @@ const NuevoPost = ({ userProfile, onBack, editingPost }) => {
               <p className="text-sm text-slate-600">¿Dónde se realizará el trabajo?</p>
             </div>
 
-            <div>
-              <label className="block text-sm font-bold text-slate-800 mb-2">
-                Municipio *
-              </label>
-              <input
-                type="text"
-                value={formData.municipality}
-                onChange={(e) => handleInputChange('municipality', e.target.value)}
-                className="w-full bg-gray-100 focus:bg-white p-3 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-all"
-                placeholder="Ej: Libertador, Chacao, Valencia"
-              />
-            </div>
+            {/* Sistema de mapas integrado */}
+            <MapPicker
+              onLocationSelect={handleLocationSelect}
+              initialPosition={
+                formData.latitude && formData.longitude
+                  ? { lat: formData.latitude, lng: formData.longitude }
+                  : null
+              }
+            />
 
+            {/* Campo opcional para dirección específica */}
             <div>
               <label className="block text-sm font-bold text-slate-800 mb-2">
-                Parroquia *
-              </label>
-              <input
-                type="text"
-                value={formData.parish}
-                onChange={(e) => handleInputChange('parish', e.target.value)}
-                className="w-full bg-gray-100 focus:bg-white p-3 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-all"
-                placeholder="Ej: Petare, Chacao, El Recreo"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-800 mb-2">
-                Sector
-              </label>
-              <input
-                type="text"
-                value={formData.sector}
-                onChange={(e) => handleInputChange('sector', e.target.value)}
-                className="w-full bg-gray-100 focus:bg-white p-3 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-all"
-                placeholder="Ej: Centro, Norte, Las Mercedes"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-800 mb-2">
-                Dirección específica *
+                Dirección específica (opcional)
               </label>
               <input
                 type="text"
                 value={formData.specific_address}
                 onChange={(e) => handleInputChange('specific_address', e.target.value)}
                 className="w-full bg-gray-100 focus:bg-white p-3 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-all"
-                placeholder="Ej: Calle 5, Casa #123"
+                placeholder="Ej: Apartamento 5B, Casa #123, etc."
               />
             </div>
 
+            {/* Campo opcional para referencias */}
             <div>
               <label className="block text-sm font-bold text-slate-800 mb-2">
-                Referencias adicionales
+                Referencias adicionales (opcional)
               </label>
               <textarea
                 value={formData.reference_info}

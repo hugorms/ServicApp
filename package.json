@@ -3,8 +3,8 @@
       "version": "1.0.0",
       "private": true,
       "scripts": {
-            "start": "concurrently \"npm run mysql-api\" \"npm run socket-server\" \"node start-clean-minimal.js\"",
-            "start-clean": "node start-clean-minimal.js",
+            "start": "concurrently \"npm run mysql-api\" \"npm run socket-server\" \"npm run start-original\"",
+            "start-clean": "npm run start-original",
             "start-original": "react-scripts start",
             "start-public": "set HOST=10.51.12.87&& set PORT=3000&& react-scripts start",
             "socket-server": "node server/socketServer.js",

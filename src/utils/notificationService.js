@@ -11,7 +11,7 @@ class NotificationService {
         type,
         title,
         message,
-        related_id: relatedId
+        post_id: relatedId
       };
 
       // Guardar en MySQL

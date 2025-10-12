@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Eye, Clock, MapPin } from 'lucide-react';
 import NuevoPost from './NuevoPost';
+import PostDetailModal from '../components/PostDetailModal';
 import { mysqlClient } from '../utils/mysqlClient';
 
 // Componente para carrusel automático de imágenes
@@ -67,6 +68,8 @@ const MisPublicaciones = ({ userProfile, socket }) => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [detailPost, setDetailPost] = useState(null);
 
   // Obtener posts del usuario desde MySQL
   const fetchMyPosts = async () => {
@@ -131,6 +134,17 @@ const MisPublicaciones = ({ userProfile, socket }) => {
   useEffect(() => {
     fetchMyPosts();
   }, []); // Sin dependencias, solo cargar al montar
+
+  // Funciones para el modal de detalles
+  const openPostDetail = (post) => {
+    setDetailPost(post);
+    setIsDetailModalOpen(true);
+  };
+
+  const closePostDetail = () => {
+    setDetailPost(null);
+    setIsDetailModalOpen(false);
+  };
 
   console.log('MisPublicaciones - userProfile:', userProfile);
   console.log('MisPublicaciones - mis posts:', myPosts);
@@ -299,7 +313,10 @@ const MisPublicaciones = ({ userProfile, socket }) => {
                   {myPosts.map((post) => (
                     <div key={post.id} className="group">
                       {/* Card dividida en dos secciones */}
-                      <div className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 hover:scale-[1.02] border border-yellow-200/30">
+                      <div
+                        className="bg-white rounded-xl overflow-hidden shadow-sm border border-yellow-200/30 cursor-pointer"
+                        onClick={() => openPostDetail(post)}
+                      >
 
                         {/* SECCIÓN 1: FOTO (80% del espacio) */}
                         <div className="relative aspect-[1/1] overflow-hidden">
@@ -341,14 +358,14 @@ const MisPublicaciones = ({ userProfile, socket }) => {
                           )}
 
                           {/* Botones de acción en la foto */}
-                          <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                          <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100">
                             <div className="flex space-x-2">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleEditPost(post);
                                 }}
-                                className="p-2.5 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110"
+                                className="p-2.5 bg-white/90 hover:bg-white rounded-full shadow-lg"
                                 title="Editar publicación"
                               >
                                 <Edit className="w-4 h-4 text-blue-600" />
@@ -358,7 +375,7 @@ const MisPublicaciones = ({ userProfile, socket }) => {
                                   e.stopPropagation();
                                   confirmDelete(post);
                                 }}
-                                className="p-2.5 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110"
+                                className="p-2.5 bg-white/90 hover:bg-white rounded-full shadow-lg"
                                 title="Eliminar publicación"
                               >
                                 <Trash2 className="w-4 h-4 text-red-500" />
@@ -510,6 +527,14 @@ const MisPublicaciones = ({ userProfile, socket }) => {
           </div>
         </div>
       )}
+
+      {/* Modal de detalles del post */}
+      <PostDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={closePostDetail}
+        post={detailPost}
+        hasApplied={false} // En mis publicaciones no necesitamos mostrar aplicación
+      />
     </div>
   );
 };
