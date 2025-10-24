@@ -8,7 +8,7 @@ import MainContent from '../components/AppLayout/MainContent';
 // Importar las páginas/componentes principales
 import PanelContratista from './PanelContratista';
 import PanelTrabajador from './PanelTrabajador';
-import AgendaTrabajador from './AgendaTrabajador';
+import ProyectosTrabajador from './ProyectosTrabajador';
 import MisPublicaciones from './MisPublicaciones';
 import EncuentraServicios from './EncuentraServicios';
 import ChatContainer from '../components/ChatContainer';
@@ -70,27 +70,28 @@ const MobileAppLayout = () => {
 
     switch (activeTab) {
       case 'dashboard':
-        return userProfile.user_type === 'contractor' 
+        return userProfile.user_type === 'contractor'
           ? <PanelContratista {...commonProps} />
           : <PanelTrabajador {...commonProps} />;
-      
+
       case 'services':
         // Trabajadores ven problemas publicados para aplicar
         return <EncuentraServicios {...commonProps} />;
-      
-      case 'agenda':
-        return <AgendaTrabajador {...commonProps} />;
-      
+
+      case 'projects':
+        // Proyectos activos del trabajador
+        return <ProyectosTrabajador {...commonProps} />;
+
       case 'posts':
-        // Trabajadores gestionan sus publicaciones de servicios
+        // Contratistas gestionan sus publicaciones
         return <MisPublicaciones {...commonProps} />;
-      
+
       case 'chat':
         return <ChatContainer {...commonProps} />;
-      
+
       case 'profile':
         return <ProfileScreen {...commonProps} onSignOut={signOut} onGoHome={handleGoHome} />;
-      
+
       default:
         return <div className="p-4">Página no encontrada</div>;
     }
@@ -108,7 +109,7 @@ const MobileAppLayout = () => {
       </div>
       
       {/* Tab de navegación en el fondo */}
-      <div className="bg-white border-t border-gray-200" style={{minHeight: '64px'}}>
+      <div className="bg-white border-t border-gray-200 relative z-[100]" style={{minHeight: '64px'}}>
         <TabNavigation
           tabs={tabs}
           activeTab={activeTab}

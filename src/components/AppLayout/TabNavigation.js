@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Search, Calendar, FileText, MessageCircle, User } from 'lucide-react';
+import { Home, Search, Calendar, FileText, MessageCircle, User, Briefcase } from 'lucide-react';
 
 const iconMap = {
   Home,
@@ -7,7 +7,8 @@ const iconMap = {
   Calendar,
   FileText,
   MessageCircle,
-  User
+  User,
+  Briefcase
 };
 
 const TabNavigation = ({ tabs, activeTab, onTabChange }) => {

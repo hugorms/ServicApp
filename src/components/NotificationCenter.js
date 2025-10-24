@@ -206,125 +206,134 @@ const NotificationCenter = ({ userId, userType, onNavigateToPost }) => {
         )}
       </button>
 
-      {/* Panel de notificaciones */}
+      {/* Panel de notificaciones - Dropdown superior derecha */}
       {showNotifications && (
-        <div className="absolute right-0 top-12 w-80 bg-white rounded-lg shadow-xl z-50 max-h-96 overflow-hidden">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-yellow-300 to-yellow-400 p-3 flex items-center justify-between">
-            <h3 className="font-bold text-slate-800">Notificaciones</h3>
-            <button
-              onClick={() => setShowNotifications(false)}
-              className="p-1 hover:bg-yellow-200/30 rounded-full"
-            >
-              <X className="w-4 h-4 text-slate-800" />
-            </button>
-          </div>
+        <>
+          {/* Fondo overlay */}
+          <div
+            className="absolute inset-0 bg-transparent z-[59]"
+            onClick={() => setShowNotifications(false)}
+          />
 
-          {/* Lista de notificaciones */}
-          <div className="max-h-64 overflow-y-auto">
-            {loading ? (
-              <div className="p-4 text-center text-gray-500">Cargando...</div>
-            ) : notifications.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                <Bell className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p>No tienes notificaciones nuevas</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {notifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className="p-3 hover:bg-gray-50 transition-colors cursor-pointer"
-                    onClick={() => handleNotificationClick(notification)}
-                  >
-                    <div className="flex items-start space-x-3">
-                      <div className="mt-1">
-                        {getNotificationIcon(notification.type)}
+          {/* Dropdown de notificaciones */}
+          <div className="absolute top-12 right-2 w-72 bg-white rounded-xl shadow-2xl z-[60] max-h-[65vh] overflow-hidden flex flex-col border border-gray-200">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-yellow-300 to-yellow-400 px-4 py-2.5 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800">Notificaciones</h3>
+              <button
+                onClick={() => setShowNotifications(false)}
+                className="p-1 hover:bg-yellow-200/30 rounded-full"
+              >
+                <X className="w-4 h-4 text-slate-800" />
+              </button>
+            </div>
+
+            {/* Lista de notificaciones */}
+            <div className="flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="p-4 text-center text-gray-500">Cargando...</div>
+              ) : notifications.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  <Bell className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">No tienes notificaciones nuevas</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {notifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      className="p-3 hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => handleNotificationClick(notification)}
+                    >
+                      <div className="flex items-start space-x-2">
+                        <div className="mt-0.5">
+                          {getNotificationIcon(notification.type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm text-slate-800 truncate">
+                            {notification.title}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">
+                            {notification.message}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {formatDate(notification.created_at)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markAsRead(notification.id);
+                          }}
+                          className="p-1 hover:bg-gray-200 rounded flex-shrink-0"
+                        >
+                          <Check className="w-4 h-4 text-green-500" />
+                        </button>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm text-slate-800">
-                          {notification.title}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          {notification.message}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {formatDate(notification.created_at)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          markAsRead(notification.id);
-                        }}
-                        className="p-1 hover:bg-gray-200 rounded"
-                      >
-                        <Check className="w-4 h-4 text-green-500" />
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer con opciones */}
+            {notifications.length > 0 && (
+              <div className="border-t px-3 py-2">
+                <button
+                  onClick={markAllAsRead}
+                  className="w-full text-center text-sm text-yellow-600 hover:text-yellow-700 py-2 hover:bg-yellow-50 rounded transition-colors"
+                >
+                  Marcar todas como leídas
+                </button>
+              </div>
+            )}
+
+            {/* Preferencias (solo para trabajadores) */}
+            {userType === 'worker' && (
+              <div className="border-t px-3 py-2 bg-gray-50">
+                <p className="text-xs font-medium text-gray-700 mb-2">Preferencias:</p>
+                <div className="space-y-1.5">
+                  <label className="flex items-center text-xs">
+                    <input
+                      type="checkbox"
+                      checked={preferences.new_jobs}
+                      onChange={(e) => updatePreferences({
+                        ...preferences,
+                        new_jobs: e.target.checked
+                      })}
+                      className="mr-2"
+                    />
+                    Nuevos trabajos
+                  </label>
+                  <label className="flex items-center text-xs">
+                    <input
+                      type="checkbox"
+                      checked={preferences.messages}
+                      onChange={(e) => updatePreferences({
+                        ...preferences,
+                        messages: e.target.checked
+                      })}
+                      className="mr-2"
+                    />
+                    Mensajes
+                  </label>
+                  <label className="flex items-center text-xs">
+                    <input
+                      type="checkbox"
+                      checked={preferences.appointments}
+                      onChange={(e) => updatePreferences({
+                        ...preferences,
+                        appointments: e.target.checked
+                      })}
+                      className="mr-2"
+                    />
+                    Citas
+                  </label>
+                </div>
               </div>
             )}
           </div>
-
-          {/* Footer con opciones */}
-          {notifications.length > 0 && (
-            <div className="border-t p-2">
-              <button
-                onClick={markAllAsRead}
-                className="w-full text-center text-sm text-yellow-600 hover:text-yellow-700 py-2 hover:bg-yellow-50 rounded"
-              >
-                Marcar todas como leídas
-              </button>
-            </div>
-          )}
-
-          {/* Preferencias (solo para trabajadores) */}
-          {userType === 'worker' && (
-            <div className="border-t p-3 bg-gray-50">
-              <p className="text-xs font-medium text-gray-700 mb-2">Preferencias:</p>
-              <div className="space-y-1">
-                <label className="flex items-center text-xs">
-                  <input
-                    type="checkbox"
-                    checked={preferences.new_jobs}
-                    onChange={(e) => updatePreferences({
-                      ...preferences,
-                      new_jobs: e.target.checked
-                    })}
-                    className="mr-2"
-                  />
-                  Nuevos trabajos
-                </label>
-                <label className="flex items-center text-xs">
-                  <input
-                    type="checkbox"
-                    checked={preferences.messages}
-                    onChange={(e) => updatePreferences({
-                      ...preferences,
-                      messages: e.target.checked
-                    })}
-                    className="mr-2"
-                  />
-                  Mensajes
-                </label>
-                <label className="flex items-center text-xs">
-                  <input
-                    type="checkbox"
-                    checked={preferences.appointments}
-                    onChange={(e) => updatePreferences({
-                      ...preferences,
-                      appointments: e.target.checked
-                    })}
-                    className="mr-2"
-                  />
-                  Citas
-                </label>
-              </div>
-            </div>
-          )}
-        </div>
+        </>
       )}
     </div>
   );

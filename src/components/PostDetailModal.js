@@ -7,6 +7,7 @@ const PostDetailModal = ({ isOpen, onClose, post, onApply, hasApplied = false })
   const [loading, setLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [images, setImages] = useState([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (isOpen && post) {
@@ -14,11 +15,30 @@ const PostDetailModal = ({ isOpen, onClose, post, onApply, hasApplied = false })
       // Procesar imágenes del post
       if (post.images) {
         try {
-          const parsedImages = JSON.parse(post.images);
-          setImages(parsedImages || []);
+          // Si post.images ya es un array, usarlo directamente
+          if (Array.isArray(post.images)) {
+            setImages(post.images);
+          }
+          // Si post.images es un string que empieza con '[', es un JSON array
+          else if (typeof post.images === 'string' && post.images.trim().startsWith('[')) {
+            const parsedImages = JSON.parse(post.images);
+            setImages(Array.isArray(parsedImages) ? parsedImages : []);
+          }
+          // Si post.images es un string directo (Base64 o URL), convertirlo en array
+          else if (typeof post.images === 'string' && post.images.trim().length > 0) {
+            setImages([post.images]);
+          }
+          else {
+            setImages([]);
+          }
         } catch (error) {
           console.error('Error parsing post images:', error);
-          setImages([]);
+          // Si hay error, intentar usar el string directamente como imagen única
+          if (typeof post.images === 'string' && post.images.trim().length > 0) {
+            setImages([post.images]);
+          } else {
+            setImages([]);
+          }
         }
       }
     }
@@ -58,6 +78,14 @@ const PostDetailModal = ({ isOpen, onClose, post, onApply, hasApplied = false })
     }
   };
 
+  const openFullscreen = () => {
+    setIsFullscreen(true);
+  };
+
+  const closeFullscreen = () => {
+    setIsFullscreen(false);
+  };
+
 
   const getSpecialtyIcon = (specialty) => {
     const icons = {
@@ -87,10 +115,10 @@ const PostDetailModal = ({ isOpen, onClose, post, onApply, hasApplied = false })
   if (!isOpen || !post) return null;
 
   return (
-    <div className="absolute inset-0 bg-white z-50">
-      <div className="w-full h-full overflow-y-auto">
+    <div className="absolute top-12 bottom-16 left-0 right-0 bg-white z-50 overflow-hidden">
+      <div className={`w-full h-full overflow-y-auto ${isFullscreen ? 'hidden' : ''}`}>
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-yellow-400 to-yellow-500 p-4">
+        <div className="sticky top-0 bg-gradient-to-r from-yellow-400 to-yellow-500 p-4 z-20">
           <div className="flex items-center space-x-2">
             <button
               onClick={onClose}
@@ -117,7 +145,10 @@ const PostDetailModal = ({ isOpen, onClose, post, onApply, hasApplied = false })
           <div className="p-4 space-y-4">
             {/* Galería de imágenes del post */}
             {images.length > 0 && (
-              <div className="relative aspect-[16/9] rounded-xl overflow-hidden bg-gray-100">
+              <div
+                className="relative aspect-[16/9] rounded-xl overflow-hidden bg-gray-100 cursor-pointer"
+                onClick={openFullscreen}
+              >
                 <img
                   src={images[currentImageIndex]}
                   alt={post.title}
@@ -128,20 +159,26 @@ const PostDetailModal = ({ isOpen, onClose, post, onApply, hasApplied = false })
                 {images.length > 1 && (
                   <>
                     <button
-                      onClick={prevImage}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        prevImage();
+                      }}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors z-10"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={nextImage}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        nextImage();
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors z-10"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
 
                     {/* Indicadores */}
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex space-x-1">
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex space-x-1 pointer-events-none">
                       {images.map((_, index) => (
                         <div
                           key={index}
@@ -304,10 +341,7 @@ const PostDetailModal = ({ isOpen, onClose, post, onApply, hasApplied = false })
                 </div>
               ) : (
                 <button
-                  onClick={() => {
-                    onApply && onApply(post.id);
-                    onClose();
-                  }}
+                  onClick={onApply}
                   className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-3 rounded-xl font-bold text-sm hover:from-green-600 hover:to-green-700 shadow-lg flex items-center justify-center"
                 >
                   <ArrowRight className="w-4 h-4 mr-2" />
@@ -318,6 +352,73 @@ const PostDetailModal = ({ isOpen, onClose, post, onApply, hasApplied = false })
           </div>
         )}
       </div>
+
+      {/* Visor de imagen en pantalla completa */}
+      {isFullscreen && images.length > 0 && (
+        <div className="absolute top-0 bottom-0 left-0 right-0 bg-black z-50 flex flex-col">
+          {/* Header del fullscreen */}
+          <div className="flex items-center justify-between p-4 bg-black/50">
+            <button
+              onClick={closeFullscreen}
+              className="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition-colors"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+            <div className="text-white text-sm font-medium">
+              {currentImageIndex + 1} / {images.length}
+            </div>
+          </div>
+
+          {/* Contenedor de imagen con zoom */}
+          <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+            <img
+              src={images[currentImageIndex]}
+              alt={post.title}
+              className="max-w-full max-h-full object-contain"
+              onClick={closeFullscreen}
+            />
+
+            {/* Controles de navegación en fullscreen */}
+            {images.length > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    prevImage();
+                  }}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    nextImage();
+                  }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/20 text-white rounded-full hover:bg-white/30 transition-colors"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Indicadores en fullscreen */}
+          {images.length > 1 && (
+            <div className="p-4 flex justify-center space-x-2">
+              {images.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setCurrentImageIndex(index)}
+                  className={`w-3 h-3 rounded-full transition-all ${
+                    index === currentImageIndex ? 'bg-white' : 'bg-white/40'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

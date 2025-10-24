@@ -12,25 +12,25 @@ const PanelTrabajador = ({ userProfile, socket, onNavigateToPost }) => {
             <h1 className="text-xl font-bold text-slate-800">
               ¡Hola, {userProfile.name}!
             </h1>
-            <p className="text-slate-700 text-sm font-medium">
-              {userProfile.profession || 'Trabajador independiente'}
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            {/* Centro de notificaciones */}
-            <NotificationCenter
-              userId={userProfile.id}
-              userType="worker"
-              onNavigateToPost={onNavigateToPost}
-            />
-
-            <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-full border border-yellow-300">
-              <Star className="w-4 h-4 text-slate-800 mr-1" />
-              <span className="text-sm font-bold text-slate-800">
-                {userProfile.rating || '5.0'}
-              </span>
+            <div className="flex items-center space-x-2 mt-1">
+              <div className="flex items-center bg-yellow-50 px-2 py-0.5 rounded-full border border-yellow-300">
+                <Star className="w-3 h-3 text-slate-800 mr-1" />
+                <span className="text-xs font-bold text-slate-800">
+                  {userProfile.rating || '5.0'}
+                </span>
+              </div>
+              <p className="text-slate-700 text-sm font-medium">
+                {userProfile.profession || 'Trabajador independiente'}
+              </p>
             </div>
           </div>
+
+          {/* Centro de notificaciones a la derecha */}
+          <NotificationCenter
+            userId={userProfile.id}
+            userType="worker"
+            onNavigateToPost={onNavigateToPost}
+          />
         </div>
       </div>
 

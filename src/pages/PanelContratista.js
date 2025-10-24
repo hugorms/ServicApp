@@ -4,6 +4,7 @@ import { mysqlClient } from '../utils/mysqlClient';
 import WorkerProfileModal from '../components/WorkerProfileModal';
 import NotificationCenter from '../components/NotificationCenter';
 import NotificationService from '../utils/notificationService';
+import RateWorkerModal from '../components/RateWorkerModal';
 
 const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
   const [activeTab, setActiveTab] = useState('applications');
@@ -23,6 +24,13 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
 
   // Estados para proyectos activos
   const [activeProjects, setActiveProjects] = useState([]);
+
+  // Estados para calificación
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [projectToRate, setProjectToRate] = useState(null);
+
+  // Estados para historial
+  const [historyProjects, setHistoryProjects] = useState([]);
 
 
   // Cargar trabajadores desde MySQL
@@ -66,18 +74,26 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
         'created_at DESC'
       );
 
-      // Contar aplicaciones para cada post
+      // Contar aplicaciones para cada post (excluyendo las aceptadas)
       const postsWithCounts = [];
       for (const post of allPosts) {
+        // Solo contar aplicaciones que NO han sido aceptadas
         const applications = await mysqlClient.select(
           'post_applications',
-          `post_id = ${post.id}`
+          `post_id = ${post.id} AND status != 'accepted'`
+        );
+
+        // Contar cuántos trabajadores están asignados (aceptados)
+        const acceptedApplications = await mysqlClient.select(
+          'post_applications',
+          `post_id = ${post.id} AND status = 'accepted'`
         );
 
         if (applications.length > 0) {
           postsWithCounts.push({
             ...post,
-            application_count: applications.length
+            application_count: applications.length,
+            accepted_count: acceptedApplications.length
           });
         }
       }
@@ -90,11 +106,11 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
     }
   };
 
-  // Cargar aplicantes de una publicación específica
+  // Cargar aplicantes de una publicación específica (pendientes y aceptados separados)
   const loadPostApplicants = async (postId) => {
     try {
-      // Cargar aplicaciones de la publicación específica
-      const applications = await mysqlClient.select(
+      // Cargar TODAS las aplicaciones (pendientes + aceptadas)
+      const allApplications = await mysqlClient.select(
         'post_applications',
         `post_applications.post_id = ${postId}`,
         'post_applications.applied_at DESC'
@@ -102,13 +118,13 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
 
       console.log(`🎯 Buscando aplicaciones para post_id: ${postId}`);
 
-      if (applications.length > 0) {
-        console.log('🔍 Aplicaciones encontradas:', applications);
+      if (allApplications.length > 0) {
+        console.log('🔍 Aplicaciones encontradas:', allApplications);
 
         // Obtener información de cada usuario desde MySQL
         const applicantsWithUserInfo = [];
 
-        for (const app of applications) {
+        for (const app of allApplications) {
           try {
             console.log(`🔍 Buscando usuario con ID: ${app.worker_id} en MySQL...`);
 
@@ -167,8 +183,25 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
           }
         }
 
-        console.log('✅ Aplicantes con datos completos:', applicantsWithUserInfo);
-        setPostApplicants(applicantsWithUserInfo);
+        // Separar en dos grupos: aceptados y pendientes
+        const acceptedApplicants = applicantsWithUserInfo.filter(app => app.status === 'accepted');
+        const pendingApplicants = applicantsWithUserInfo.filter(app => app.status !== 'accepted');
+
+        // Ordenar pendientes por rating (más destacados primero)
+        pendingApplicants.sort((a, b) => {
+          // Primero por rating (mayor a menor)
+          if (b.rating !== a.rating) {
+            return b.rating - a.rating;
+          }
+          // Si tienen mismo rating, por fecha de aplicación (más reciente primero)
+          return new Date(b.applied_at) - new Date(a.applied_at);
+        });
+
+        // Combinar: primero aceptados, luego pendientes
+        const orderedApplicants = [...acceptedApplicants, ...pendingApplicants];
+
+        console.log('✅ Aplicantes ordenados (aceptados primero, luego pendientes por rating):', orderedApplicants);
+        setPostApplicants(orderedApplicants);
       } else {
         console.log('📭 No hay aplicantes para esta publicación');
         setPostApplicants([]);
@@ -184,10 +217,11 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
     try {
       console.log('🔍 Cargando proyectos activos del contratista...');
 
-      // Cargar proyectos activos del contratista
+      // Cargar solo proyectos que NO estén pagados/calificados
+      // Los proyectos 'paid' van al historial
       const projects = await mysqlClient.select(
         'active_projects',
-        `contractor_id = ${userProfile.id}`,
+        `contractor_id = ${userProfile.id} AND status != 'paid'`,
         'created_at DESC'
       );
 
@@ -238,6 +272,65 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
     }
   };
 
+  // Cargar historial de proyectos completados y pagados
+  const loadHistory = async () => {
+    try {
+      console.log('📚 Cargando historial de proyectos...');
+
+      // Cargar solo proyectos pagados/calificados (status = 'paid')
+      const projects = await mysqlClient.select(
+        'active_projects',
+        `contractor_id = ${userProfile.id} AND status = 'paid'`,
+        'completed_at DESC'
+      );
+
+      if (projects.length > 0) {
+        // Enriquecer con datos del trabajador y reseña
+        const projectsWithData = [];
+
+        for (const project of projects) {
+          try {
+            // Obtener datos del trabajador
+            const workers = await mysqlClient.select(
+              'users',
+              `users.id = ${project.worker_id}`
+            );
+
+            // Obtener la reseña que dejaste
+            const reviews = await mysqlClient.select(
+              'worker_reviews',
+              `contractor_id = ${userProfile.id} AND worker_id = ${project.worker_id} AND post_id = ${project.post_id}`
+            );
+
+            const worker = workers.length > 0 ? workers[0] : null;
+            const review = reviews.length > 0 ? reviews[0] : null;
+
+            projectsWithData.push({
+              ...project,
+              worker_name: worker?.name || 'Trabajador desconocido',
+              worker_profession: worker?.profession || 'N/A',
+              worker_rating: Number(worker?.rating) || 5.0,
+              worker_photo: worker?.profile_photo_url,
+              my_rating: review?.rating || null,
+              my_comment: review?.comment || null
+            });
+          } catch (workerError) {
+            console.error(`Error cargando datos del trabajador ${project.worker_id}:`, workerError);
+          }
+        }
+
+        console.log('✅ Historial cargado:', projectsWithData);
+        setHistoryProjects(projectsWithData);
+      } else {
+        console.log('📭 No hay historial');
+        setHistoryProjects([]);
+      }
+    } catch (error) {
+      console.error('Error cargando historial:', error);
+      setHistoryProjects([]);
+    }
+  };
+
   // Effect para cargar datos
   useEffect(() => {
     if (activeTab === 'applications') {
@@ -245,6 +338,8 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
       setApplicationView('posts'); // Reset view
     } else if (activeTab === 'projects') {
       loadActiveProjects();
+    } else if (activeTab === 'history') {
+      loadHistory();
     }
   }, [activeTab, searchTerm, userProfile.id]);
 
@@ -291,6 +386,34 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
             const application = applications[0];
             console.log('📋 Datos de aplicación:', application);
 
+            // NUEVO: Rechazar automáticamente a todos los demás aplicantes pendientes
+            console.log('🚫 Rechazando automáticamente a los demás aplicantes...');
+            const otherApplications = await mysqlClient.select(
+              'post_applications',
+              `post_id = ${application.post_id} AND id != ${applicationId} AND status = 'pending'`
+            );
+
+            if (otherApplications.length > 0) {
+              console.log(`📝 Encontrados ${otherApplications.length} aplicantes pendientes para rechazar`);
+
+              for (const otherApp of otherApplications) {
+                await mysqlClient.update(
+                  'post_applications',
+                  { status: 'rejected' },
+                  `id = ${otherApp.id}`
+                );
+
+                // Notificar a los trabajadores rechazados
+                await NotificationService.notifyApplicationResponse(
+                  otherApp.worker_id,
+                  false, // rechazada
+                  'El contratista seleccionó a otro trabajador',
+                  application.post_id
+                );
+              }
+              console.log('✅ Todos los demás aplicantes han sido rechazados automáticamente');
+            }
+
             // Crear proyecto activo con datos básicos
             const projectData = {
               post_id: application.post_id,
@@ -310,6 +433,13 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
 
             await mysqlClient.insert('active_projects', projectData);
             console.log('✅ Proyecto activo creado en MySQL');
+
+            // ✨ NUEVO: Marcar post como "en progreso" y asignar trabajador
+            await mysqlClient.update('posts', {
+              status: 'in_progress',
+              assigned_worker_id: application.worker_id
+            }, `id = ${application.post_id}`);
+            console.log('✅ Post marcado como "en progreso" y trabajador asignado');
 
             // Crear notificación para el trabajador aceptado usando el servicio
             if (workerData) {
@@ -409,17 +539,22 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
       {/* Header */}
       <div className="bg-gradient-to-r from-yellow-300 to-yellow-400 shadow-sm p-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-slate-800">Panel Contratista</h1>
           <div className="flex items-center space-x-2">
-            <NotificationCenter
-              userId={userProfile.id}
-              userType={userProfile.user_type}
-              onNavigateToPost={onNavigateToPost}
-            />
             <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center text-slate-800 text-lg font-bold">
               {userProfile.name?.charAt(0)?.toUpperCase()}
             </div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-800">Panel Contratista</h1>
+              <p className="text-xs text-slate-700">{userProfile.name}</p>
+            </div>
           </div>
+
+          {/* Centro de notificaciones a la derecha */}
+          <NotificationCenter
+            userId={userProfile.id}
+            userType={userProfile.user_type}
+            onNavigateToPost={onNavigateToPost}
+          />
         </div>
       </div>
 
@@ -486,6 +621,11 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
                           <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
                             {post.application_count} aplicaciones
                           </span>
+                          {post.accepted_count > 0 && (
+                            <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">
+                              ✓ {post.accepted_count} asignado{post.accepted_count > 1 ? 's' : ''}
+                            </span>
+                          )}
                         </div>
 
                         {(post.budget_min || post.budget_max) && (
@@ -521,14 +661,98 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
                 </div>
 
                 {/* Lista */}
-                <div className="flex-1 p-4 space-y-3 overflow-y-auto">
+                <div className="flex-1 p-4 space-y-4 overflow-y-auto">
                   {postApplicants.length === 0 ? (
                     <div className="text-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-500 mx-auto"></div>
                       <p className="text-gray-500 mt-2">Cargando aplicantes...</p>
                     </div>
                   ) : (
-                    postApplicants.map((applicant, index) => (
+                    <>
+                      {/* SECCIÓN 1: TRABAJADORES ASIGNADOS */}
+                      {postApplicants.filter(app => app.status === 'accepted').length > 0 && (
+                        <div>
+                          <div className="flex items-center space-x-2 mb-3">
+                            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-5 h-5 text-green-600" />
+                            </div>
+                            <h3 className="font-bold text-slate-800 text-sm">
+                              TRABAJADOR{postApplicants.filter(app => app.status === 'accepted').length > 1 ? 'ES' : ''} ASIGNADO{postApplicants.filter(app => app.status === 'accepted').length > 1 ? 'S' : ''} ({postApplicants.filter(app => app.status === 'accepted').length})
+                            </h3>
+                          </div>
+                          <div className="space-y-2">
+                            {postApplicants.filter(app => app.status === 'accepted').map((applicant, index) => (
+                              <div key={`accepted-${applicant.id}-${index}`}
+                                   className="bg-green-50 rounded-lg p-3 shadow-sm border-2 border-green-200 hover:shadow-md transition-shadow">
+                                <div className="flex items-center space-x-3">
+                                  {/* Foto - Click para ver perfil */}
+                                  <div
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      goToApplicantProfile(applicant);
+                                    }}
+                                    className="w-10 h-10 bg-gradient-to-br from-green-400 to-green-500 rounded-full flex items-center justify-center text-white font-bold overflow-hidden cursor-pointer hover:ring-2 hover:ring-green-400 transition-all">
+                                    {applicant.profile_photo_url ? (
+                                      <img src={applicant.profile_photo_url} alt={applicant.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span>{applicant.name?.charAt(0)?.toUpperCase()}</span>
+                                    )}
+                                  </div>
+
+                                  {/* Info */}
+                                  <div className="flex-1">
+                                    <div className="flex items-center space-x-2">
+                                      <h4
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          goToApplicantProfile(applicant);
+                                        }}
+                                        className="font-bold text-slate-800 cursor-pointer hover:text-green-600 transition-colors"
+                                      >
+                                        {applicant.name}
+                                      </h4>
+                                      <span className="px-2 py-0.5 bg-green-500 text-white rounded-full text-xs font-bold">
+                                        ✓ EN PROYECTO
+                                      </span>
+                                    </div>
+                                    <p className="text-sm text-slate-600">{applicant.profession}</p>
+                                    <div className="flex items-center space-x-1 mt-1">
+                                      <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                                      <span className="text-sm font-bold text-slate-700">{Number(applicant.rating).toFixed(1) || '5.0'}</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Flecha - Click para ir a Proyectos Activos */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveTab('projects');
+                                    }}
+                                    className="p-2 hover:bg-green-100 rounded-full transition-colors"
+                                    title="Ver en Proyectos Activos"
+                                  >
+                                    <ChevronRight className="w-5 h-5 text-green-600" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SECCIÓN 2: APLICANTES PENDIENTES */}
+                      {postApplicants.filter(app => app.status !== 'accepted').length > 0 && (
+                        <div>
+                          <div className="flex items-center space-x-2 mb-3">
+                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                              <Users className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <h3 className="font-bold text-slate-800 text-sm">
+                              PENDIENTES ({postApplicants.filter(app => app.status !== 'accepted').length})
+                            </h3>
+                          </div>
+                          <div className="space-y-2">
+                            {postApplicants.filter(app => app.status !== 'accepted').map((applicant, index) => (
                       <div key={`applicant-${applicant.id}-${index}`}
                            onClick={() => goToApplicantProfile(applicant)}
                            className="bg-white rounded-lg p-3 shadow-sm border border-yellow-200/30 cursor-pointer hover:shadow-md transition-shadow">
@@ -562,7 +786,11 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
                           <ChevronRight className="w-5 h-5 text-gray-400" />
                         </div>
                       </div>
-                    ))
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -646,29 +874,83 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
                     </div>
                   )}
 
-                  {/* Botones de acción */}
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={() => {
-                        respondToApplication(selectedApplicant.id, 'accepted');
-                        goBackToApplicants();
-                      }}
-                      className="flex-1 flex items-center justify-center space-x-2 bg-green-500 text-white py-3 rounded-lg font-bold hover:bg-green-600 transition-colors"
-                    >
-                      <CheckCircle2 className="w-5 h-5" />
-                      <span>Aceptar</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        respondToApplication(selectedApplicant.id, 'rejected');
-                        goBackToApplicants();
-                      }}
-                      className="flex-1 flex items-center justify-center space-x-2 bg-red-500 text-white py-3 rounded-lg font-bold hover:bg-red-600 transition-colors"
-                    >
-                      <X className="w-5 h-5" />
-                      <span>Rechazar</span>
-                    </button>
-                  </div>
+                  {/* Estado del trabajador */}
+                  {selectedApplicant.status === 'accepted' ? (
+                    <div className="space-y-3">
+                      {/* Badge de trabajador asignado */}
+                      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4 text-center">
+                        <div className="flex items-center justify-center space-x-2 mb-2">
+                          <CheckCircle2 className="w-6 h-6 text-green-600" />
+                          <span className="font-bold text-green-700 text-lg">TRABAJADOR ASIGNADO</span>
+                        </div>
+                        <p className="text-sm text-slate-600">
+                          Este trabajador ya está asignado a este proyecto
+                        </p>
+                      </div>
+
+                      {/* Botón para ir a Proyectos Activos */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('projects');
+                          goBackToPosts();
+                        }}
+                        className="w-full flex items-center justify-center space-x-2 bg-yellow-500 text-white py-3 rounded-lg font-bold hover:bg-yellow-600 transition-colors shadow-md"
+                      >
+                        <Clock className="w-5 h-5" />
+                        <span>Ver en Proyectos Activos</span>
+                      </button>
+                    </div>
+                  ) : (
+                    /* Botones de acción para pendientes */
+                    (() => {
+                      // Verificar si ya hay un trabajador aceptado en este post
+                      const hasAcceptedWorker = postApplicants.some(app => app.status === 'accepted');
+
+                      return (
+                        <div className="space-y-3">
+                          {hasAcceptedWorker && (
+                            /* Mensaje de advertencia si ya hay un trabajador asignado */
+                            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 text-center">
+                              <p className="text-sm font-medium text-slate-700">
+                                ⚠️ Ya tienes un trabajador asignado a este proyecto
+                              </p>
+                              <p className="text-xs text-slate-600 mt-1">
+                                No puedes aceptar más trabajadores para este post
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="flex space-x-3">
+                            <button
+                              onClick={() => {
+                                respondToApplication(selectedApplicant.id, 'accepted');
+                                goBackToApplicants();
+                              }}
+                              disabled={hasAcceptedWorker}
+                              className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg font-bold transition-colors ${
+                                hasAcceptedWorker
+                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                  : 'bg-green-500 text-white hover:bg-green-600'
+                              }`}
+                            >
+                              <CheckCircle2 className="w-5 h-5" />
+                              <span>Aceptar</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                respondToApplication(selectedApplicant.id, 'rejected');
+                                goBackToApplicants();
+                              }}
+                              className="flex-1 flex items-center justify-center space-x-2 bg-red-500 text-white py-3 rounded-lg font-bold hover:bg-red-600 transition-colors"
+                            >
+                              <X className="w-5 h-5" />
+                              <span>Rechazar</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
                 </div>
               </div>
             )}
@@ -714,15 +996,13 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
                   return (
                     <div key={`project-${project.id}-${index}`} className="bg-white rounded-lg p-4 shadow-sm border border-yellow-200/30">
                       {/* Header del proyecto */}
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-bold text-slate-800">{project.title}</h3>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${statusInfo.color}`}>
-                          {statusInfo.text}
-                        </span>
+                      <div className="mb-3">
+                        <h3 className="font-bold text-slate-800 mb-1">{project.title}</h3>
+                        <p className="text-xs text-slate-600">{project.specialty}</p>
                       </div>
 
                       {/* Información del trabajador */}
-                      <div className="flex items-center space-x-3 mb-3">
+                      <div className="flex items-center space-x-3 mb-4">
                         <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center text-slate-800 font-bold overflow-hidden">
                           {project.worker_photo ? (
                             <img src={project.worker_photo} alt={project.worker_name} className="w-full h-full object-cover" />
@@ -732,72 +1012,141 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
                         </div>
                         <div className="flex-1">
                           <p className="font-medium text-slate-800">{project.worker_name}</p>
-                          <p className="text-sm text-slate-600">{project.worker_profession}</p>
-                          <div className="flex items-center space-x-1 mt-1">
-                            <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                            <span className="text-sm font-bold text-slate-700">{project.worker_rating.toFixed(1)}</span>
+                          <p className="text-xs text-slate-600">{project.worker_profession}</p>
+                          <div className="flex items-center space-x-1">
+                            <Star className="w-3 h-3 text-yellow-500 fill-current" />
+                            <span className="text-xs font-bold text-slate-700">{project.worker_rating.toFixed(1)}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Progreso del trabajo */}
-                      <div className="space-y-2 mb-4">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-600">Progreso del trabajo</span>
-                          <span className="font-bold text-slate-800">{project.progress_percentage}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-500 h-2 rounded-full transition-all duration-500"
-                            style={{width: `${project.progress_percentage}%`}}>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Información adicional */}
-                      <div className="text-sm text-slate-600 mb-4">
-                        <p><span className="font-medium">Especialidad:</span> {project.specialty}</p>
-                        <p><span className="font-medium">Ubicación:</span> {project.location}</p>
-                        {(project.budget_min || project.budget_max) && (
-                          <p><span className="font-medium">Presupuesto:</span> ${project.budget_min || 0} - ${project.budget_max || 'N/A'}</p>
-                        )}
-                      </div>
-
-                      {/* Estados del proceso */}
-                      <div className="grid grid-cols-4 gap-2 mt-4">
-                        {[
-                          { step: 0, label: 'Asignado', status: 'assigned' },
-                          { step: 1, label: 'Iniciado', status: 'started' },
-                          { step: 2, label: 'En Curso', status: 'in_progress' },
-                          { step: 3, label: 'Finalizado', status: 'completed' }
-                        ].map((stepInfo) => {
-                          const isActive = statusInfo.step >= stepInfo.step;
-                          const isCurrent = project.status === stepInfo.status;
-
-                          return (
-                            <div key={stepInfo.step} className="text-center">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-1 ${
-                                isActive
-                                  ? (isCurrent ? 'bg-blue-500' : 'bg-green-500')
-                                  : 'bg-gray-300'
-                              }`}>
-                                {isActive ? (
-                                  <CheckCircle className="w-4 h-4 text-white" />
-                                ) : (
-                                  <Clock className="w-4 h-4 text-gray-500" />
-                                )}
-                              </div>
-                              <span className={`text-xs font-medium ${
-                                isActive
-                                  ? (isCurrent ? 'text-blue-600' : 'text-green-600')
-                                  : 'text-gray-500'
-                              }`}>
-                                {stepInfo.label}
-                              </span>
+                      {/* 3 Círculos conectados */}
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between px-2">
+                          {/* Círculo 1: Iniciado */}
+                          <div className="flex flex-col items-center">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 transition-all ${
+                              project.stage_1_photo
+                                ? 'bg-purple-500 text-white border-purple-500'
+                                : 'bg-gray-200 text-slate-400 border-gray-300'
+                            }`}>
+                              {project.stage_1_photo ? <CheckCircle className="w-5 h-5" /> : '1'}
                             </div>
-                          );
-                        })}
+                            <span className="text-xs mt-1 font-medium text-slate-600">Iniciado</span>
+                          </div>
+
+                          {/* Línea 1 */}
+                          <div className={`flex-1 h-0.5 mx-1 ${project.stage_1_photo ? 'bg-yellow-500' : 'bg-gray-300'}`}></div>
+
+                          {/* Círculo 2: En Curso */}
+                          <div className="flex flex-col items-center">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 transition-all ${
+                              project.stage_2_photo
+                                ? 'bg-yellow-500 text-white border-yellow-500'
+                                : 'bg-gray-200 text-slate-400 border-gray-300'
+                            }`}>
+                              {project.stage_2_photo ? <CheckCircle className="w-5 h-5" /> : '2'}
+                            </div>
+                            <span className="text-xs mt-1 font-medium text-slate-600">En Curso</span>
+                          </div>
+
+                          {/* Línea 2 */}
+                          <div className={`flex-1 h-0.5 mx-1 ${project.stage_2_photo ? 'bg-yellow-500' : 'bg-gray-300'}`}></div>
+
+                          {/* Círculo 3: Finalizado */}
+                          <div className="flex flex-col items-center">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 transition-all ${
+                              project.stage_3_photo
+                                ? 'bg-green-500 text-white border-green-500'
+                                : 'bg-gray-200 text-slate-400 border-gray-300'
+                            }`}>
+                              {project.stage_3_photo ? <CheckCircle className="w-5 h-5" /> : '3'}
+                            </div>
+                            <span className="text-xs mt-1 font-medium text-slate-600">Finalizado</span>
+                          </div>
+                        </div>
+
+                        {/* Barra de progreso */}
+                        <div className="mt-3">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-slate-600 font-medium">Progreso</span>
+                            <span className="font-bold text-slate-800">{project.progress_percentage}%</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-gradient-to-r from-yellow-400 to-yellow-500 h-2 rounded-full transition-all duration-500"
+                              style={{width: `${project.progress_percentage}%`}}>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Badge de estado */}
+                        <div className="text-center mt-2">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold inline-block ${statusInfo.color}`}>
+                            {statusInfo.text}
+                          </span>
+                        </div>
                       </div>
+
+                      {/* Galería de fotos del progreso */}
+                      {(project.stage_1_photo || project.stage_2_photo || project.stage_3_photo) && (
+                        <div className="mt-4 pt-3 border-t border-gray-100">
+                          <h4 className="text-xs font-bold text-slate-700 mb-2">Fotos del Progreso:</h4>
+                          <div className="grid grid-cols-3 gap-2">
+                            {project.stage_1_photo && (
+                              <div className="relative">
+                                <img src={project.stage_1_photo} alt="Etapa 1" className="w-full h-20 object-cover rounded-lg" />
+                                <span className="absolute top-1 left-1 bg-purple-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">1</span>
+                              </div>
+                            )}
+                            {project.stage_2_photo && (
+                              <div className="relative">
+                                <img src={project.stage_2_photo} alt="Etapa 2" className="w-full h-20 object-cover rounded-lg" />
+                                <span className="absolute top-1 left-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">2</span>
+                              </div>
+                            )}
+                            {project.stage_3_photo && (
+                              <div className="relative">
+                                <img src={project.stage_3_photo} alt="Etapa 3" className="w-full h-20 object-cover rounded-lg" />
+                                <span className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">3</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Botón de verificar y aprobar - Solo para proyectos completados por el trabajador */}
+                      {project.status === 'completed' && (
+                        <div className="mt-4 pt-3 border-t border-gray-100">
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-center">
+                            <CheckCircle2 className="w-6 h-6 text-blue-600 mx-auto mb-1" />
+                            <p className="text-sm font-bold text-blue-700">Trabajo Finalizado por el Trabajador</p>
+                            <p className="text-xs text-slate-600 mt-1">Verifica las fotos y aprueba el trabajo para calificarlo</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              // Mostrar modal de calificación directamente
+                              setProjectToRate(project);
+                              setShowRatingModal(true);
+                            }}
+                            className="w-full bg-gradient-to-r from-green-400 to-green-500 text-white py-3 rounded-lg font-bold flex items-center justify-center space-x-2 hover:shadow-lg transition-all"
+                          >
+                            <CheckCircle className="w-5 h-5" />
+                            <span>✓ Verificar y Aprobar Trabajo</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Mensaje para proyectos ya calificados */}
+                      {project.status === 'paid' && (
+                        <div className="mt-4 pt-3 border-t border-gray-100">
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                            <CheckCircle className="w-6 h-6 text-green-600 mx-auto mb-1" />
+                            <p className="text-sm font-medium text-green-700">Trabajo Calificado</p>
+                            <p className="text-xs text-slate-600 mt-1">Ya calificaste este trabajo</p>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Fechas importantes */}
                       <div className="text-xs text-slate-500 mt-3 space-y-1">
@@ -822,117 +1171,87 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
             <h2 className="text-lg font-bold text-slate-800">Historial de Trabajos</h2>
 
             {/* Lista de trabajos completados */}
-            <div className="space-y-3">
-              {/* Ejemplo de trabajo completado */}
-              <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200/30">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-slate-800">Reparación de plomería</h3>
-                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                    ✅ Completado
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center text-slate-800 font-bold">
-                      C
+            {historyProjects.length === 0 ? (
+              <div className="text-center py-12">
+                <CheckCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="font-bold text-slate-800 text-lg mb-2">No hay trabajos en el historial</h3>
+                <p className="text-slate-600 text-sm">
+                  Los trabajos completados y calificados aparecerán aquí
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {historyProjects.map((project, index) => (
+                  <div key={`history-${project.id}-${index}`} className="bg-white rounded-lg p-4 shadow-sm border border-green-200/30">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-bold text-slate-800">{project.title}</h3>
+                      <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                        ✅ Completado
+                      </span>
                     </div>
-                    <div>
-                      <p className="font-medium text-slate-800">Carlos Herrera</p>
-                      <p className="text-sm text-slate-600">Plomero</p>
-                      <div className="flex items-center space-x-1 mt-1">
-                        <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                        <span className="text-sm font-bold text-slate-700">4.9</span>
+
+                    {/* Trabajador info */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center text-slate-800 font-bold overflow-hidden">
+                          {project.worker_photo ? (
+                            <img src={project.worker_photo} alt={project.worker_name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{project.worker_name?.charAt(0)?.toUpperCase()}</span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-800">{project.worker_name}</p>
+                          <p className="text-sm text-slate-600">{project.worker_profession}</p>
+                          <div className="flex items-center space-x-1 mt-1">
+                            <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                            <span className="text-sm font-bold text-slate-700">{project.worker_rating.toFixed(1)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-sm text-slate-600">Completado</p>
+                        <p className="text-xs text-slate-500">
+                          {new Date(project.completed_at).toLocaleDateString('es-ES')}
+                        </p>
+                        {project.final_amount && (
+                          <p className="font-bold text-green-600">${project.final_amount}</p>
+                        )}
                       </div>
                     </div>
-                  </div>
 
-                  <div className="text-right">
-                    <p className="text-sm text-slate-600">Completado</p>
-                    <p className="text-xs text-slate-500">15 Sep 2025</p>
-                    <p className="font-bold text-green-600">$150</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Tu calificación:</span>
-                  <div className="flex items-center space-x-1">
-                    {[1,2,3,4,5].map(star => (
-                      <Star key={star} className="w-4 h-4 text-yellow-500 fill-current" />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Otro ejemplo */}
-              <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200/30">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-slate-800">Instalación eléctrica</h3>
-                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                    ✅ Completado
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center text-slate-800 font-bold">
-                      M
-                    </div>
-                    <div>
-                      <p className="font-medium text-slate-800">María Rodríguez</p>
-                      <p className="text-sm text-slate-600">Electricista</p>
-                      <div className="flex items-center space-x-1 mt-1">
-                        <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                        <span className="text-sm font-bold text-slate-700">4.7</span>
+                    {/* Tu calificación */}
+                    {project.my_rating && (
+                      <div>
+                        <div className="flex items-center justify-between text-sm mb-2">
+                          <span className="text-slate-600">Tu calificación:</span>
+                          <div className="flex items-center space-x-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Star
+                                key={star}
+                                className={`w-4 h-4 ${
+                                  star <= project.my_rating
+                                    ? 'text-yellow-500 fill-yellow-500'
+                                    : 'text-gray-300'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        {project.my_comment && (
+                          <div className="bg-gray-50 rounded-lg p-2 mt-2">
+                            <p className="text-xs text-slate-600 italic">"{project.my_comment}"</p>
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    )}
                   </div>
-
-                  <div className="text-right">
-                    <p className="text-sm text-slate-600">Completado</p>
-                    <p className="text-xs text-slate-500">10 Sep 2025</p>
-                    <p className="font-bold text-green-600">$220</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Tu calificación:</span>
-                  <div className="flex items-center space-x-1">
-                    {[1,2,3,4].map(star => (
-                      <Star key={star} className="w-4 h-4 text-yellow-500 fill-current" />
-                    ))}
-                    <Star className="w-4 h-4 text-gray-300" />
-                  </div>
-                </div>
+                ))}
               </div>
-            </div>
+            )}
 
-            {/* Estadísticas del historial */}
-            <div className="bg-white rounded-lg p-4 shadow-sm border border-yellow-200/30">
-              <h3 className="font-bold text-slate-800 mb-3">Estadísticas</h3>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <p className="text-2xl font-bold text-green-600">12</p>
-                  <p className="text-xs text-slate-600">Trabajos Completados</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-blue-600">$2,340</p>
-                  <p className="text-xs text-slate-600">Total Invertido</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-yellow-600">4.8</p>
-                  <p className="text-xs text-slate-600">Rating Promedio</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Mensaje si no hay historial */}
-            <div className="text-center py-8">
-              <CheckCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 text-sm">
-                Los trabajos completados aparecerán aquí
-              </p>
-            </div>
           </div>
         )}
       </div>
@@ -943,6 +1262,21 @@ const PanelContratista = ({ userProfile, socket, onNavigateToPost }) => {
         onClose={() => setShowWorkerModal(false)}
         workerId={selectedWorker?.id}
       />
+
+      {/* Modal de calificación */}
+      {showRatingModal && projectToRate && (
+        <RateWorkerModal
+          project={projectToRate}
+          onClose={() => {
+            setShowRatingModal(false);
+            setProjectToRate(null);
+          }}
+          onRatingSubmitted={() => {
+            // Recargar proyectos activos para actualizar el estado
+            loadActiveProjects();
+          }}
+        />
+      )}
     </div>
   );
 };

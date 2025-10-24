@@ -173,8 +173,13 @@ const EncuentraServicios = () => {
         console.log('🔍 Intentando cargar posts desde MySQL...');
         console.log('🔍 Usuario actual:', userProfile?.id, userProfile?.name);
 
-        // Cambiar a buscar posts con status 'Pending' según la tabla MySQL
-        const mysqlPosts = await mysqlClient.select('posts', 'status = "Pending"', 'created_at DESC');
+        // ✨ NUEVO: Solo cargar posts abiertos (sin asignar)
+        // Excluir posts con status 'in_progress' o 'completed'
+        const mysqlPosts = await mysqlClient.select(
+          'posts',
+          '(status = "open" OR status = "Pending" OR status IS NULL)',
+          'created_at DESC'
+        );
 
         contractorPosts = mysqlPosts || [];
         console.log('✅ Posts cargados desde MySQL:', contractorPosts.length);
@@ -516,27 +521,16 @@ const EncuentraServicios = () => {
                       </div>
                     )}
 
-                    {/* Botón de aplicar en la foto */}
-                    <div className="absolute top-3 right-3">
-                      {appliedPosts.has(post.id) ? (
+                    {/* Indicador de aplicación */}
+                    {appliedPosts.has(post.id) && (
+                      <div className="absolute top-3 right-3">
                         <div className="p-2.5 bg-blue-500 rounded-full shadow-lg">
                           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
                         </div>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openApplicationModal(post);
-                          }}
-                          className="p-2.5 bg-green-500 hover:bg-green-600 rounded-full shadow-lg opacity-0 group-hover:opacity-100"
-                          title="Aplicar a este trabajo"
-                        >
-                          <ArrowRight className="w-4 h-4 text-white" />
-                        </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
 
                   </div>
@@ -602,7 +596,10 @@ const EncuentraServicios = () => {
         isOpen={isModalOpen}
         onClose={closePostDetail}
         post={selectedPost}
-        onApply={applyToPost}
+        onApply={() => {
+          setPostToApply(selectedPost);
+          setShowApplicationModal(true);
+        }}
         hasApplied={selectedPost ? appliedPosts.has(selectedPost.id) : false}
       />
 

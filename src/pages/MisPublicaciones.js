@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Eye, Clock, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Edit, Trash2, Eye, Clock, MapPin, ChevronDown } from 'lucide-react';
 import NuevoPost from './NuevoPost';
-import PostDetailModal from '../components/PostDetailModal';
 import { mysqlClient } from '../utils/mysqlClient';
 
 // Componente para carrusel automático de imágenes
@@ -68,8 +67,11 @@ const MisPublicaciones = ({ userProfile, socket }) => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [detailPost, setDetailPost] = useState(null);
+
+  // ✨ NUEVO: Estado para filtrar posts
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'open', 'in_progress', 'completed'
+  const [showDropdown, setShowDropdown] = useState(false); // Estado del dropdown
+  const dropdownRef = useRef(null); // Referencia para cerrar al hacer click fuera
 
   // Obtener posts del usuario desde MySQL
   const fetchMyPosts = async () => {
@@ -88,8 +90,9 @@ const MisPublicaciones = ({ userProfile, socket }) => {
         const mysqlPosts = await mysqlClient.select('posts', `contractor_id = ${userId}`, 'created_at DESC');
 
         if (mysqlPosts && mysqlPosts.length > 0) {
-          // Cargar imágenes para cada post desde la tabla post_images
+          // Cargar imágenes y datos del trabajador asignado para cada post
           for (const post of mysqlPosts) {
+            // Cargar imágenes
             try {
               const images = await mysqlClient.select('post_images', `post_id = ${post.id}`, 'order_index ASC');
               post.images = images ? images.map(img => img.image_url) : [];
@@ -97,10 +100,30 @@ const MisPublicaciones = ({ userProfile, socket }) => {
               console.log('⚠️ Error cargando imágenes del post:', imageError.message);
               post.images = [];
             }
+
+            // ✨ NUEVO: Cargar datos del trabajador asignado si existe
+            if (post.assigned_worker_id) {
+              try {
+                const workers = await mysqlClient.select('users', `id = ${post.assigned_worker_id}`);
+                if (workers && workers.length > 0) {
+                  post.assigned_worker = workers[0];
+                  console.log(`✅ Trabajador asignado cargado para post ${post.id}:`, workers[0].name);
+                }
+              } catch (workerError) {
+                console.log('⚠️ Error cargando trabajador asignado:', workerError.message);
+                post.assigned_worker = null;
+              }
+            }
           }
 
           userPosts = mysqlPosts;
           console.log('✅ Posts cargados desde MySQL:', mysqlPosts.length);
+
+          // ✨ NUEVO: Log detallado de estados
+          console.log('📊 Estados de posts cargados:');
+          mysqlPosts.forEach((post, index) => {
+            console.log(`  ${index + 1}. ID:${post.id} | Título:"${post.title}" | Status:"${post.status || 'NULL'}" | Worker:${post.assigned_worker_id || 'N/A'}`);
+          });
         } else {
           console.log('ℹ️ No se encontraron posts para este usuario');
           userPosts = [];
@@ -130,24 +153,45 @@ const MisPublicaciones = ({ userProfile, socket }) => {
     }
   };
 
-  // Cargar posts cuando el componente se monta
+  // Cargar posts cuando el componente se monta O cuando cambia el activeTab
   useEffect(() => {
-    fetchMyPosts();
-  }, []); // Sin dependencias, solo cargar al montar
+    if (activeTab === 'my-posts') {
+      fetchMyPosts();
+    }
+  }, [activeTab]); // ✨ NUEVO: Recargar cuando cambias de tab
 
-  // Funciones para el modal de detalles
-  const openPostDetail = (post) => {
-    setDetailPost(post);
-    setIsDetailModalOpen(true);
-  };
+  // ✨ NUEVO: Escuchar eventos de actualización desde otras pantallas
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('🔄 Evento de refresh detectado en MisPublicaciones');
+      fetchMyPosts();
+    };
 
-  const closePostDetail = () => {
-    setDetailPost(null);
-    setIsDetailModalOpen(false);
-  };
+    window.addEventListener('refreshMyPosts', handleRefresh);
+    return () => window.removeEventListener('refreshMyPosts', handleRefresh);
+  }, []);
+
+  // ✨ NUEVO: Cerrar dropdown al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   console.log('MisPublicaciones - userProfile:', userProfile);
   console.log('MisPublicaciones - mis posts:', myPosts);
+
+  // ✨ NUEVO: Log para debug de estados
+  console.log('📊 Distribución de estados:', myPosts.reduce((acc, post) => {
+    const status = post.status || 'sin_status';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {}));
 
   // Función para eliminar post
   const handleDeletePost = async (postId) => {
@@ -212,34 +256,77 @@ const MisPublicaciones = ({ userProfile, socket }) => {
   };
 
 
+  // ✨ NUEVO: Sistema de estados del ciclo de vida del post (case-insensitive)
   const getStatusColor = (status) => {
-    switch (status) {
-      case 'active':
-        return 'bg-green-100 text-green-800 border-green-200';
+    const statusLower = (status || '').toLowerCase();
+    switch (statusLower) {
+      case 'completed':
+        return 'bg-green-100 text-green-800 border-green-300';
+      case 'in_progress':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'open':
+      case 'pending':
+        return 'bg-blue-100 text-blue-800 border-blue-300';
       case 'draft':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'paused':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'expired':
-        return 'bg-red-100 text-red-800 border-red-200';
+        return 'bg-gray-100 text-gray-800 border-gray-300';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-blue-100 text-blue-800 border-blue-300'; // Por defecto: abierto
     }
   };
 
   const getStatusText = (status) => {
-    switch (status) {
-      case 'active':
-        return 'Activo';
+    const statusLower = (status || '').toLowerCase();
+    switch (statusLower) {
+      case 'completed':
+        return '✅ Completado';
+      case 'in_progress':
+        return '🔧 En Progreso';
+      case 'open':
+      case 'pending':
+        return '🟢 Abierto';
       case 'draft':
-        return 'Borrador';
-      case 'paused':
-        return 'Pausado';
-      case 'expired':
-        return 'Expirado';
+        return '📝 Borrador';
       default:
-        return 'Desconocido';
+        return '🟢 Abierto'; // Por defecto: abierto
     }
+  };
+
+  const getStatusIcon = (status) => {
+    const statusLower = (status || '').toLowerCase();
+    switch (statusLower) {
+      case 'completed':
+        return '✅';
+      case 'in_progress':
+        return '🔧';
+      case 'open':
+      case 'pending':
+        return '🟢';
+      default:
+        return '🟢';
+    }
+  };
+
+  // ✨ NUEVO: Contar posts por estado
+  const getPostCount = (filterType) => {
+    return myPosts.filter(post => {
+      const postStatus = (post.status || '').toLowerCase();
+      if (filterType === 'all') return true;
+      if (filterType === 'open') return !post.status || postStatus === 'open' || postStatus === 'pending';
+      if (filterType === 'in_progress') return postStatus === 'in_progress';
+      if (filterType === 'completed') return postStatus === 'completed';
+      return true;
+    }).length;
+  };
+
+  // ✨ NUEVO: Obtener label del filtro actual
+  const getFilterLabel = () => {
+    const filters = {
+      all: '📋 Todos',
+      open: '🟢 Abiertos',
+      in_progress: '🔧 En Progreso',
+      completed: '✅ Completados'
+    };
+    return filters[statusFilter] || '📋 Todos';
   };
 
   // Si está mostrando el formulario de nuevo post, renderizar NuevoPost
@@ -301,6 +388,73 @@ const MisPublicaciones = ({ userProfile, socket }) => {
       <div className="p-4">
         {activeTab === 'my-posts' && (
           <div>
+            {/* ✨ NUEVO: Dropdown de filtros elegante y compacto */}
+            <div className="mb-3 relative" ref={dropdownRef}>
+              {/* Botón principal del dropdown */}
+              <button
+                onClick={() => setShowDropdown(!showDropdown)}
+                className="w-full bg-white border border-yellow-300 rounded-lg px-3 py-2 flex items-center justify-between text-left hover:border-yellow-400 transition-all shadow-sm"
+              >
+                <div className="flex items-center space-x-2">
+                  <span className="text-base">{getFilterLabel().split(' ')[0]}</span>
+                  <span className="text-sm font-bold text-slate-800">
+                    {getFilterLabel().split(' ').slice(1).join(' ')}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    ({getPostCount(statusFilter)})
+                  </span>
+                </div>
+                <ChevronDown
+                  className={`w-4 h-4 text-slate-600 transition-transform duration-200 ${
+                    showDropdown ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {/* Menú desplegable */}
+              {showDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-yellow-200 rounded-lg shadow-lg overflow-hidden z-50 animate-fadeIn">
+                  {[
+                    { id: 'all', label: 'Todos', icon: '📋' },
+                    { id: 'open', label: 'Abiertos', icon: '🟢' },
+                    { id: 'in_progress', label: 'En Progreso', icon: '🔧' },
+                    { id: 'completed', label: 'Completados', icon: '✅' }
+                  ].map((filter, index) => {
+                    const count = getPostCount(filter.id);
+                    const isActive = statusFilter === filter.id;
+
+                    return (
+                      <button
+                        key={filter.id}
+                        onClick={() => {
+                          setStatusFilter(filter.id);
+                          setShowDropdown(false);
+                        }}
+                        className={`w-full px-3 py-2 flex items-center justify-between hover:bg-yellow-50 transition-colors ${
+                          index !== 3 ? 'border-b border-gray-100' : ''
+                        } ${isActive ? 'bg-yellow-50' : ''}`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <span className="text-lg">{filter.icon}</span>
+                          <span className={`text-sm font-bold ${isActive ? 'text-yellow-700' : 'text-slate-800'}`}>
+                            {filter.label}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            ({count})
+                          </span>
+                        </div>
+                        {isActive && (
+                          <div className="w-5 h-5 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center">
+                            <span className="text-white text-[10px] font-bold">✓</span>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {loading ? (
               <div className="text-center py-8">
                 <div className="animate-spin w-8 h-8 border-2 border-yellow-400 border-t-transparent rounded-full mx-auto"></div>
@@ -310,12 +464,21 @@ const MisPublicaciones = ({ userProfile, socket }) => {
               <>
                 {/* Grid moderno y estético - 2 columnas para posts más grandes */}
                 <div className="grid grid-cols-2 gap-3 px-2">
-                  {myPosts.map((post) => (
+                  {myPosts
+                    .filter(post => {
+                      // ✨ NUEVO: Aplicar filtro de estado (case-insensitive)
+                      const postStatus = (post.status || '').toLowerCase();
+                      if (statusFilter === 'all') return true;
+                      if (statusFilter === 'open') return !post.status || postStatus === 'open' || postStatus === 'pending';
+                      if (statusFilter === 'in_progress') return postStatus === 'in_progress';
+                      if (statusFilter === 'completed') return postStatus === 'completed';
+                      return true;
+                    })
+                    .map((post) => (
                     <div key={post.id} className="group">
                       {/* Card dividida en dos secciones */}
                       <div
-                        className="bg-white rounded-xl overflow-hidden shadow-sm border border-yellow-200/30 cursor-pointer"
-                        onClick={() => openPostDetail(post)}
+                        className="bg-white rounded-xl overflow-hidden shadow-sm border border-yellow-200/30"
                       >
 
                         {/* SECCIÓN 1: FOTO (80% del espacio) */}
@@ -357,8 +520,15 @@ const MisPublicaciones = ({ userProfile, socket }) => {
                             </div>
                           )}
 
+                          {/* ✨ NUEVO: Badge de estado en la esquina superior izquierda */}
+                          <div className="absolute top-3 left-3">
+                            <div className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-lg border ${getStatusColor(post.status)}`}>
+                              {getStatusText(post.status)}
+                            </div>
+                          </div>
+
                           {/* Botones de acción en la foto */}
-                          <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100">
+                          <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
                             <div className="flex space-x-2">
                               <button
                                 onClick={(e) => {
@@ -404,19 +574,68 @@ const MisPublicaciones = ({ userProfile, socket }) => {
                             )}
                           </div>
 
+                          {/* ✨ NUEVO: Mostrar trabajador asignado si existe */}
+                          {post.assigned_worker && ((post.status || '').toLowerCase() === 'in_progress' || (post.status || '').toLowerCase() === 'completed') && (
+                            <div className="mb-2 flex items-center space-x-2 bg-gray-50 rounded-lg p-2 border border-gray-200">
+                              <div className="w-6 h-6 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                {post.assigned_worker.name?.charAt(0)?.toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold text-slate-800 truncate">
+                                  {post.assigned_worker.name}
+                                </p>
+                                <p className="text-[10px] text-slate-500 truncate">
+                                  {post.assigned_worker.profession || 'Trabajador'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
                           {/* Metadata en una sola línea */}
-                          <div className="flex items-center justify-between text-xs text-slate-500">
-                            <span className="flex items-center">
-                              <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                              Activo
+                          <div className="flex items-center justify-between text-xs">
+                            <span className={`flex items-center font-medium ${
+                              (post.status || '').toLowerCase() === 'completed' ? 'text-green-600' :
+                              (post.status || '').toLowerCase() === 'in_progress' ? 'text-yellow-600' :
+                              'text-blue-600'
+                            }`}>
+                              <div className={`w-2 h-2 rounded-full mr-2 ${
+                                (post.status || '').toLowerCase() === 'completed' ? 'bg-green-500' :
+                                (post.status || '').toLowerCase() === 'in_progress' ? 'bg-yellow-500' :
+                                'bg-blue-500'
+                              }`}></div>
+                              {getStatusIcon(post.status)} {getStatusText(post.status).replace(/[🟢🔧✅📝]/g, '').trim()}
                             </span>
-                            <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                            <span className="text-slate-500">{new Date(post.created_at).toLocaleDateString()}</span>
                           </div>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
+
+                {/* ✨ NUEVO: Mensaje cuando no hay posts en el filtro */}
+                {myPosts.filter(post => {
+                  const postStatus = (post.status || '').toLowerCase();
+                  if (statusFilter === 'all') return true;
+                  if (statusFilter === 'open') return !post.status || postStatus === 'open' || postStatus === 'pending';
+                  if (statusFilter === 'in_progress') return postStatus === 'in_progress';
+                  if (statusFilter === 'completed') return postStatus === 'completed';
+                  return true;
+                }).length === 0 && myPosts.length > 0 && (
+                  <div className="bg-white rounded-xl p-6 shadow-sm border border-yellow-200/30 text-center">
+                    <div className="text-4xl mb-3">
+                      {statusFilter === 'open' && '🟢'}
+                      {statusFilter === 'in_progress' && '🔧'}
+                      {statusFilter === 'completed' && '✅'}
+                    </div>
+                    <p className="text-slate-600 font-medium">No hay publicaciones {
+                      statusFilter === 'open' ? 'abiertas' :
+                      statusFilter === 'in_progress' ? 'en progreso' :
+                      statusFilter === 'completed' ? 'completadas' : ''
+                    }</p>
+                    <p className="text-xs text-slate-500 mt-1">Cambia el filtro para ver otras publicaciones</p>
+                  </div>
+                )}
 
                 {myPosts.length === 0 && !loading && (
                   <div className="bg-white rounded-xl p-6 shadow-sm border border-yellow-200/30 text-center">
@@ -527,14 +746,6 @@ const MisPublicaciones = ({ userProfile, socket }) => {
           </div>
         </div>
       )}
-
-      {/* Modal de detalles del post */}
-      <PostDetailModal
-        isOpen={isDetailModalOpen}
-        onClose={closePostDetail}
-        post={detailPost}
-        hasApplied={false} // En mis publicaciones no necesitamos mostrar aplicación
-      />
     </div>
   );
 };

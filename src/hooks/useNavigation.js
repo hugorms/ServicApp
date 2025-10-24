@@ -18,7 +18,7 @@ export const useNavigation = () => {
     } else {
       return [
         { id: 'dashboard', label: 'Inicio', icon: 'Home' },
-        { id: 'agenda', label: 'Agenda', icon: 'Calendar' },
+        { id: 'projects', label: 'Proyectos', icon: 'Briefcase' },
         { id: 'services', label: 'Servicios', icon: 'Search' },
         { id: 'chat', label: 'Mensajes', icon: 'MessageCircle' },
         { id: 'profile', label: 'Perfil', icon: 'User' }
